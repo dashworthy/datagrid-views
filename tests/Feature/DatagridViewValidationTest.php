@@ -5,40 +5,54 @@ use Dashworthy\DatagridViews\Tests\Fixtures\User;
 
 beforeEach(function () {
     $this->owner = User::factory()->create();
-    $this->view = DatagridView::factory()->ownedBy($this->owner)->forGrid('app', 'members')->create(['name' => 'Active']);
+    $this->view = DatagridView::factory()->ownedBy($this->owner)->forGrid('app', 'grids.members')->create(['name' => 'Active']);
 });
 
+/**
+ * A store payload: a fresh name plus $payload. The grid is never sent; it is
+ * the grid whose route handles the request.
+ *
+ * @param  array<string, mixed>  $payload
+ * @return array<string, mixed>
+ */
 function storeView(array $payload): array
 {
-    return ['grid_key' => 'members', 'name' => 'Fresh', ...$payload];
+    return ['name' => 'Fresh', ...$payload];
 }
 
-// --- name and grid key ---
+// --- name ---
 
-test('store refuses a bad name or grid key', function (array $payload, string $field) {
+test('store refuses a bad name', function (array $payload) {
     $this->actingAs($this->owner)
-        ->postJson('/api/app/datagrid-views', $payload)
+        ->postJson('/api/grids/members/views', $payload)
         ->assertUnprocessable()
-        ->assertJsonValidationErrors($field);
+        ->assertJsonValidationErrors('name');
 })->with([
-    'name missing' => [['grid_key' => 'members'], 'name'],
-    'name blank' => [['grid_key' => 'members', 'name' => '   '], 'name'],
-    'name not a string' => [['grid_key' => 'members', 'name' => ['x']], 'name'],
-    'name over 100 characters' => [['grid_key' => 'members', 'name' => str_repeat('n', 101)], 'name'],
-    'grid key missing' => [['name' => 'Fresh'], 'grid_key'],
-    'grid key not a string' => [['grid_key' => 12, 'name' => 'Fresh'], 'grid_key'],
-    'grid key over 128 characters' => [['grid_key' => str_repeat('g', 129), 'name' => 'Fresh'], 'grid_key'],
+    'name missing' => [[]],
+    'name blank' => [['name' => '   ']],
+    'name not a string' => [['name' => ['x']]],
+    'name over 100 characters' => [['name' => str_repeat('n', 101)]],
+]);
+
+test('store needs no grid key, and a malformed one in the payload is ignored rather than validated', function (mixed $gridKey) {
+    $this->actingAs($this->owner)
+        ->postJson('/api/grids/members/views', storeView(['grid_key' => $gridKey]))
+        ->assertCreated()
+        ->assertJsonPath('data.grid_key', 'grids.members');
+})->with([
+    'not a string' => [12],
+    'over 128 characters' => [str_repeat('g', 129)],
 ]);
 
 test('store accepts a name of exactly 100 characters', function () {
     $this->actingAs($this->owner)
-        ->postJson('/api/app/datagrid-views', storeView(['name' => str_repeat('n', 100)]))
+        ->postJson('/api/grids/members/views', storeView(['name' => str_repeat('n', 100)]))
         ->assertCreated();
 });
 
 test('update refuses a bad name', function (mixed $name) {
     $this->actingAs($this->owner)
-        ->patchJson("/api/app/datagrid-views/{$this->view->id}", ['name' => $name])
+        ->patchJson("/api/grids/members/views/{$this->view->id}", ['name' => $name])
         ->assertUnprocessable()
         ->assertJsonValidationErrors('name');
 
@@ -53,11 +67,11 @@ test('update refuses a bad name', function (mixed $name) {
 
 test('store refuses a name the owner already uses on the grid', function (string $name) {
     $this->actingAs($this->owner)
-        ->postJson('/api/app/datagrid-views', storeView(['name' => $name]))
+        ->postJson('/api/grids/members/views', storeView(['name' => $name]))
         ->assertUnprocessable()
         ->assertJsonValidationErrors('name');
 
-    expect(DatagridView::query()->forGrid('app', 'members')->count())->toBe(1);
+    expect(DatagridView::query()->forGrid('app', 'grids.members')->count())->toBe(1);
 })->with([
     'same case' => ['Active'],
     'different case' => ['active'],
@@ -66,23 +80,29 @@ test('store refuses a name the owner already uses on the grid', function (string
 
 test('store allows the same name on another grid, in another section, or for another owner', function () {
     $this->actingAs($this->owner)
-        ->postJson('/api/app/datagrid-views', storeView(['grid_key' => 'invoices', 'name' => 'Active']))
+        ->postJson('/api/grids/invoices/views', storeView(['name' => 'Active']))
         ->assertCreated();
 
     $this->actingAs($this->owner)
-        ->postJson('/api/admin/datagrid-views', storeView(['name' => 'Active']))
+        ->postJson('/api/grids/admin-members/views', storeView(['name' => 'Active']))
+        ->assertCreated();
+
+    DatagridView::factory()->ownedBy($this->owner)->forGrid('admin', 'grids.members')->create(['name' => 'Admin only']);
+
+    $this->actingAs($this->owner)
+        ->postJson('/api/grids/members/views', storeView(['name' => 'Admin only']))
         ->assertCreated();
 
     $this->actingAs(User::factory()->create())
-        ->postJson('/api/app/datagrid-views', storeView(['name' => 'Active']))
+        ->postJson('/api/grids/members/views', storeView(['name' => 'Active']))
         ->assertCreated();
 });
 
 test('update refuses a name another of the owner\'s views on the grid uses', function () {
-    $other = DatagridView::factory()->ownedBy($this->owner)->forGrid('app', 'members')->create(['name' => 'Other']);
+    $other = DatagridView::factory()->ownedBy($this->owner)->forGrid('app', 'grids.members')->create(['name' => 'Other']);
 
     $this->actingAs($this->owner)
-        ->patchJson("/api/app/datagrid-views/{$other->id}", ['name' => 'ACTIVE'])
+        ->patchJson("/api/grids/members/views/{$other->id}", ['name' => 'ACTIVE'])
         ->assertUnprocessable()
         ->assertJsonValidationErrors('name');
 
@@ -91,16 +111,16 @@ test('update refuses a name another of the owner\'s views on the grid uses', fun
 
 test('update lets a view keep its own name or change only its case', function (string $name) {
     $this->actingAs($this->owner)
-        ->patchJson("/api/app/datagrid-views/{$this->view->id}", ['name' => $name])
+        ->patchJson("/api/grids/members/views/{$this->view->id}", ['name' => $name])
         ->assertOk()
         ->assertJsonPath('data.name', $name);
 })->with(['Active', 'ACTIVE']);
 
 test('update allows a name the owner uses only on another grid', function () {
-    DatagridView::factory()->ownedBy($this->owner)->forGrid('app', 'invoices')->create(['name' => 'Elsewhere']);
+    DatagridView::factory()->ownedBy($this->owner)->forGrid('app', 'grids.invoices')->create(['name' => 'Elsewhere']);
 
     $this->actingAs($this->owner)
-        ->patchJson("/api/app/datagrid-views/{$this->view->id}", ['name' => 'Elsewhere'])
+        ->patchJson("/api/grids/members/views/{$this->view->id}", ['name' => 'Elsewhere'])
         ->assertOk();
 });
 
@@ -108,7 +128,7 @@ test('update allows a name the owner uses only on another grid', function () {
 
 test('store refuses grid state in the wrong shape', function (array $state, string $field) {
     $this->actingAs($this->owner)
-        ->postJson('/api/app/datagrid-views', storeView($state))
+        ->postJson('/api/grids/members/views', storeView($state))
         ->assertUnprocessable()
         ->assertJsonValidationErrors($field);
 })->with([
@@ -135,7 +155,7 @@ test('store refuses grid state in the wrong shape', function (array $state, stri
 
 test('store accepts page sizes at both ends of the range', function (int $pageSize) {
     $this->actingAs($this->owner)
-        ->postJson('/api/app/datagrid-views', storeView(['name' => "Size {$pageSize}", 'page_size' => $pageSize]))
+        ->postJson('/api/grids/members/views', storeView(['name' => "Size {$pageSize}", 'page_size' => $pageSize]))
         ->assertCreated()
         ->assertJsonPath('data.page_size', $pageSize);
 })->with([1, 500]);
@@ -156,7 +176,7 @@ function filterSetsWithValue(mixed $value): array
  */
 test('store accepts a filter value that is a scalar, null or a flat list of scalars', function (mixed $value) {
     $this->actingAs($this->owner)
-        ->postJson('/api/app/datagrid-views', storeView(['filter_sets' => filterSetsWithValue($value)]))
+        ->postJson('/api/grids/members/views', storeView(['filter_sets' => filterSetsWithValue($value)]))
         ->assertCreated()
         ->assertJsonPath('data.filter_sets', filterSetsWithValue($value));
 })->with([
@@ -171,7 +191,7 @@ test('store accepts a filter value that is a scalar, null or a flat list of scal
 
 test('store refuses a filter value that is an object, a nested list or an oversized list', function (mixed $value) {
     $this->actingAs($this->owner)
-        ->postJson('/api/app/datagrid-views', storeView(['filter_sets' => filterSetsWithValue($value)]))
+        ->postJson('/api/grids/members/views', storeView(['filter_sets' => filterSetsWithValue($value)]))
         ->assertUnprocessable()
         ->assertJsonValidationErrors('filter_sets.0.filters.0.value');
 })->with([
@@ -183,7 +203,7 @@ test('store refuses a filter value that is an object, a nested list or an oversi
 
 test('update refuses a filter value that is an object', function () {
     $this->actingAs($this->owner)
-        ->patchJson("/api/app/datagrid-views/{$this->view->id}", ['filter_sets' => filterSetsWithValue(['a' => 1])])
+        ->patchJson("/api/grids/members/views/{$this->view->id}", ['filter_sets' => filterSetsWithValue(['a' => 1])])
         ->assertUnprocessable()
         ->assertJsonValidationErrors('filter_sets.0.filters.0.value');
 });
@@ -192,7 +212,7 @@ test('update refuses grid state in the wrong shape, and null for a state field',
     $before = $this->view->fresh();
 
     $this->actingAs($this->owner)
-        ->patchJson("/api/app/datagrid-views/{$this->view->id}", $state)
+        ->patchJson("/api/grids/members/views/{$this->view->id}", $state)
         ->assertUnprocessable()
         ->assertJsonValidationErrors($field);
 
@@ -210,7 +230,7 @@ test('update refuses grid state in the wrong shape, and null for a state field',
 
 test('state keys the wire shape does not define are dropped rather than stored', function () {
     $response = $this->actingAs($this->owner)
-        ->postJson('/api/app/datagrid-views', storeView([
+        ->postJson('/api/grids/members/views', storeView([
             'filter_sets' => [['filters' => [['field' => 'column_Name', 'value' => 'a', 'filter_operator' => 'contains', 'extra' => 'x']], 'filter_set_operator' => 'and', 'extra' => 'y']],
             'sorts' => [['field' => 'column_Name', 'sort_operator' => 'asc', 'extra' => 'z']],
             'visibility' => [['field' => 'column_Name', 'is_hidden' => true, 'extra' => 'w']],

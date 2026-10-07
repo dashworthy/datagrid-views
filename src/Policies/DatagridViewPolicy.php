@@ -3,6 +3,7 @@
 namespace Dashworthy\DatagridViews\Policies;
 
 use Dashworthy\DatagridViews\Contracts\GovernsDatagridViewAccess;
+use Dashworthy\DatagridViews\Http\Requests\DatagridViewRequest;
 use Dashworthy\DatagridViews\Models\DatagridView;
 use Dashworthy\DatagridViews\Support\DatagridViewSections;
 use Illuminate\Contracts\Auth\Authenticatable;
@@ -15,8 +16,9 @@ use Illuminate\Database\Eloquent\Model;
  * shows them ({@see DatagridView::scopeVisibleTo()}), which is only their own.
  *
  * Over HTTP, a view outside the actor's visible set never reaches this policy:
- * the `{datagridView}` route binding resolves inside the same scope and 404s
- * first. An actor the section shuts out of their own view gets a 403 here.
+ * the view routes' requests ({@see DatagridViewRequest::datagridView()})
+ * look `{view}` up inside the same scope and 404 first. An actor the section
+ * shuts out of their own view gets a 403 here.
  */
 class DatagridViewPolicy
 {

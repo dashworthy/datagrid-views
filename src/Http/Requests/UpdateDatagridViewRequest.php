@@ -3,9 +3,7 @@
 namespace Dashworthy\DatagridViews\Http\Requests;
 
 use Dashworthy\DatagridViews\Http\Concerns\ValidatesGridState;
-use Dashworthy\DatagridViews\Models\DatagridView;
 use Dashworthy\DatagridViews\Support\UniqueDatagridViewName;
-use Illuminate\Foundation\Http\FormRequest;
 
 /**
  * Renaming a view and/or replacing parts of its saved state. Any subset of
@@ -13,13 +11,19 @@ use Illuminate\Foundation\Http\FormRequest;
  * field is left as it is. Null is refused for every field: to save "none",
  * send an empty list. The grid and the default flag cannot change here.
  */
-class UpdateDatagridViewRequest extends FormRequest
+class UpdateDatagridViewRequest extends DatagridViewRequest
 {
     use ValidatesGridState;
 
+    /**
+     * Looks the view up first, so a view outside the actor's scope 404s
+     * before any 403 could say it exists.
+     */
     public function authorize(): bool
     {
-        return $this->user()->can('update', $this->datagridView());
+        $view = $this->datagridView();
+
+        return $this->actorMaySeeGrid() && $this->actor()->can('update', $view);
     }
 
     /**
@@ -31,14 +35,5 @@ class UpdateDatagridViewRequest extends FormRequest
             'name' => ['sometimes', 'string', 'max:100', UniqueDatagridViewName::forRenaming($this->datagridView())],
             ...$this->gridStateRules(['sometimes']),
         ];
-    }
-
-    /**
-     * The view being updated, already resolved inside the actor's visible
-     * scope by the `{datagridView}` route binding.
-     */
-    public function datagridView(): DatagridView
-    {
-        return $this->route('datagridView');
     }
 }

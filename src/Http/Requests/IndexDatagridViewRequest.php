@@ -3,18 +3,19 @@
 namespace Dashworthy\DatagridViews\Http\Requests;
 
 use Dashworthy\DatagridViews\Models\DatagridView;
-use Illuminate\Foundation\Http\FormRequest;
 
 /**
- * Listing one grid's views. The section's access rule decides whether the
+ * Listing the grid's views. The section's access rule decides whether the
  * actor may have views here at all; the query itself (`visibleTo`) decides
- * which rows they see.
+ * which rows they see. The grid is the one handling the request, so nothing
+ * is read from the query string.
  */
-class IndexDatagridViewRequest extends FormRequest
+class IndexDatagridViewRequest extends DatagridViewRequest
 {
     public function authorize(): bool
     {
-        return $this->user()->can('viewAny', [DatagridView::class, $this->route('section')]);
+        return $this->actorMaySeeGrid()
+            && $this->actor()->can('viewAny', [DatagridView::class, $this->sectionKey()]);
     }
 
     /**
@@ -22,8 +23,6 @@ class IndexDatagridViewRequest extends FormRequest
      */
     public function rules(): array
     {
-        return [
-            'grid' => ['required', 'string', 'max:128'],
-        ];
+        return [];
     }
 }

@@ -6,10 +6,11 @@ use Dashworthy\DatagridViews\Contracts\DefinesDatagridViewSection;
 use Dashworthy\DatagridViews\Contracts\GovernsDatagridViewAccess;
 
 /**
- * The sections the package's own suite mounts, standing in for a host
- * application's admin (central database) and app (tenant database) sections.
- * `Scripted` lets a test shut an actor out of the section; `Parameterized` is
- * mounted behind a `{tenant}` URL parameter, as a multi-tenant host nests it.
+ * The sections the package's own suite's grids keep their views in, standing
+ * in for a host application's admin (central database) and app (tenant
+ * database) sections. `Scripted` lets a test shut an actor out of the
+ * section; `Parameterized` holds the grid mounted behind a `{tenant}` URL
+ * parameter, as a multi-tenant host nests it.
  */
 enum TestSection: string implements DefinesDatagridViewSection
 {

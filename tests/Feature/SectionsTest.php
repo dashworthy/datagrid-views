@@ -1,6 +1,7 @@
 <?php
 
 use Dashworthy\DatagridViews\Support\DatagridViewSections;
+use Dashworthy\DatagridViews\Tests\Fixtures\CollidingSection;
 use Dashworthy\DatagridViews\Tests\Fixtures\OwnerOnlyAccess;
 use Dashworthy\DatagridViews\Tests\Fixtures\TestSection;
 
@@ -30,4 +31,39 @@ test('the package config ships with no sections, so a host must list its own', f
     $shipped = require __DIR__.'/../../config/datagrid-views.php';
 
     expect($shipped)->toBe(['sections' => []]);
+});
+
+/*
+ | keyOf() is what a grid's views go through to reach their section: it hands
+ | back the key only for a section that is listed and whose key no other
+ | listed enum also claims, so a misconfigured grid fails closed instead of
+ | borrowing another section's access rules.
+ */
+test('keyOf returns the key of a listed section', function () {
+    expect(app(DatagridViewSections::class)->keyOf(TestSection::App))->toBe('app')
+        ->and(app(DatagridViewSections::class)->keyOf(TestSection::Admin))->toBe('admin');
+});
+
+test('keyOf throws for a section that is not listed in config', function () {
+    config()->set('datagrid-views.sections', []);
+
+    expect(fn () => app(DatagridViewSections::class)->keyOf(TestSection::App))
+        ->toThrow(InvalidArgumentException::class, "Datagrid view section [app] is not listed in config('datagrid-views.sections').");
+});
+
+test('keyOf throws for a section whose key another configured enum also claims, whichever is listed first', function (array $sections) {
+    config()->set('datagrid-views.sections', $sections);
+
+    expect(fn () => app(DatagridViewSections::class)->keyOf(TestSection::App))
+        ->toThrow(InvalidArgumentException::class, "Datagrid view section key [app] is registered by more than one enum in config('datagrid-views.sections').");
+})->with([
+    'colliding enum first' => [[CollidingSection::class, TestSection::class]],
+    'own enum first' => [[TestSection::class, CollidingSection::class]],
+]);
+
+test('keyOf throws for an unlisted enum whose key a listed enum uses, rather than borrowing its rules', function () {
+    config()->set('datagrid-views.sections', [TestSection::class]);
+
+    expect(fn () => app(DatagridViewSections::class)->keyOf(CollidingSection::App))
+        ->toThrow(InvalidArgumentException::class, "Datagrid view section [app] is not listed in config('datagrid-views.sections').");
 });
