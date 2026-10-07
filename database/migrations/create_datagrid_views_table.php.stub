@@ -1,0 +1,39 @@
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    /**
+     * A name unique per (section, grid_key, owner) and at most one default per
+     * (section, grid_key, owner) are enforced by the package's actions, not by
+     * unique indexes: the name key is too wide for a MySQL/MariaDB InnoDB
+     * index, and those databases have no partial index to hold "one true
+     * is_default" on its own.
+     */
+    public function up(): void
+    {
+        Schema::create('datagrid_views', function (Blueprint $table) {
+            $table->id();
+            $table->string('section')->index();
+            $table->string('grid_key');
+            $table->morphs('owner');
+            $table->string('name');
+            $table->json('filter_sets')->nullable();
+            $table->json('sorts')->nullable();
+            $table->json('visibility')->nullable();
+            $table->unsignedSmallInteger('page_size')->nullable();
+            $table->boolean('is_default')->default(false);
+            $table->timestamps();
+
+            $table->index(['section', 'grid_key', 'owner_type', 'owner_id']);
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::dropIfExists('datagrid_views');
+    }
+};
