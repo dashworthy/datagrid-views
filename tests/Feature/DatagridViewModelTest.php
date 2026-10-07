@@ -2,6 +2,7 @@
 
 use Dashworthy\DatagridViews\Models\DatagridView;
 use Dashworthy\DatagridViews\Tests\Fixtures\User;
+use Illuminate\Database\UniqueConstraintViolationException;
 
 beforeEach(function () {
     $this->owner = User::factory()->create();
@@ -114,14 +115,30 @@ test('ownedBy matches the owner type as well as its key', function () {
     expect(DatagridView::query()->ownedBy($this->owner)->pluck('id')->all())->toBe([$mine->id]);
 });
 
-test('the same name may be saved on two grids, or by two owners', function () {
+test('the same name may be saved on two grids, in two sections, or by two owners', function () {
     $other = User::factory()->create();
 
     DatagridView::factory()->ownedBy($this->owner)->forGrid('app', 'members')->create(['name' => 'Active']);
     DatagridView::factory()->ownedBy($this->owner)->forGrid('app', 'invoices')->create(['name' => 'Active']);
+    DatagridView::factory()->ownedBy($this->owner)->forGrid('admin', 'members')->create(['name' => 'Active']);
     DatagridView::factory()->ownedBy($other)->forGrid('app', 'members')->create(['name' => 'Active']);
 
-    expect(DatagridView::query()->where('name', 'Active')->count())->toBe(3);
+    expect(DatagridView::query()->where('name', 'Active')->count())->toBe(4);
+});
+
+test('the database refuses a second view with the same name by the same owner on the same grid', function () {
+    DatagridView::factory()->ownedBy($this->owner)->forGrid('app', 'members')->create(['name' => 'Active']);
+
+    expect(fn () => DatagridView::factory()->ownedBy($this->owner)->forGrid('app', 'members')->create(['name' => 'Active']))
+        ->toThrow(UniqueConstraintViolationException::class);
+});
+
+test('the owner cannot be mass-assigned', function () {
+    $view = new DatagridView(['owner_type' => 'some-other-identity', 'owner_id' => 9, 'name' => 'Active']);
+
+    expect($view->owner_type)->toBeNull()
+        ->and($view->owner_id)->toBeNull()
+        ->and($view->name)->toBe('Active');
 });
 
 test('the factory fills a complete, valid view', function () {

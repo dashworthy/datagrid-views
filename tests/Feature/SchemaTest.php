@@ -42,6 +42,20 @@ test('a view is not the default unless it is made one', function () {
     expect((string) datagridViewColumns()['is_default']['default'])->toBeIn(['0', "'0'", 'false']);
 });
 
+test('page_size is stored as an integer and is_default as a boolean', function () {
+    expect(Schema::getColumnType('datagrid_views', 'page_size'))->toBeIn(['integer', 'smallint'])
+        ->and(Schema::getColumnType('datagrid_views', 'is_default'))->toBeIn(['boolean', 'tinyint', 'integer']);
+});
+
+test('a name is unique per owner per grid per section, enforced by the database', function () {
+    $unique = collect(Schema::getIndexes('datagrid_views'))
+        ->firstWhere('name', 'datagrid_views_owner_grid_name_unique');
+
+    expect($unique)->not->toBeNull()
+        ->and($unique['unique'])->toBeTrue()
+        ->and($unique['columns'])->toBe(['section', 'grid_key', 'owner_type', 'owner_id', 'name']);
+});
+
 test('the table is indexed for listing one owner\'s views of one grid', function () {
     $indexedColumnSets = collect(Schema::getIndexes('datagrid_views'))->pluck('columns');
 

@@ -14,7 +14,9 @@ use Illuminate\Support\Carbon;
  * are sorted and filtered, and how many show per page.
  *
  * `filter_sets`, `sorts` and `visibility` hold the same snake_case wire shapes
- * `dashboard_widgets` stores, read back exactly as written.
+ * `dashboard_widgets` stores. They read back with the same values; MySQL's
+ * native JSON type may reorder object keys, so compare them as structures,
+ * never as serialized strings.
  *
  * @property int $id
  * @property string $section

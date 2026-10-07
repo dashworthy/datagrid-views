@@ -22,7 +22,10 @@ interface GovernsDatagridViewAccess
     /**
      * The owning model for a view $actor saves in this section.
      *
-     * Never null: a view is always private to exactly one owner.
+     * Never null: a view is always private to exactly one owner. Called only
+     * after canUse() is true. For an actor this rule does not recognise it
+     * MUST throw (e.g. an AuthorizationException), never return a substitute
+     * owner.
      */
     public function ownerFor(Authenticatable&Model $actor): Model;
 

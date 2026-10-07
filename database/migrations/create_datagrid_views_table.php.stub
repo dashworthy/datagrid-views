@@ -7,20 +7,26 @@ use Illuminate\Support\Facades\Schema;
 return new class extends Migration
 {
     /**
-     * A name unique per (section, grid_key, owner) and at most one default per
-     * (section, grid_key, owner) are enforced by the package's actions, not by
-     * unique indexes: the name key is too wide for a MySQL/MariaDB InnoDB
-     * index, and those databases have no partial index to hold "one true
-     * is_default" on its own.
+     * A name is unique per (section, grid_key, owner), held by a unique index
+     * so two concurrent saves cannot both win. The sized `section`, `grid_key`
+     * and `name` columns keep that index at about 2.2 KB under utf8mb4, inside
+     * InnoDB's 3072-byte key limit. Under a case-insensitive collation such as
+     * utf8mb4_unicode_ci, the index also treats "Active" and "active" as the
+     * same name.
+     *
+     * At most one default per (section, grid_key, owner) is enforced by the
+     * package's action, which clears the previous default in the same
+     * transaction. MySQL and MariaDB have no partial index that could hold
+     * "one true is_default" on its own.
      */
     public function up(): void
     {
         Schema::create('datagrid_views', function (Blueprint $table) {
             $table->id();
-            $table->string('section')->index();
-            $table->string('grid_key');
+            $table->string('section', 64)->index();
+            $table->string('grid_key', 128);
             $table->morphs('owner');
-            $table->string('name');
+            $table->string('name', 100);
             $table->json('filter_sets')->nullable();
             $table->json('sorts')->nullable();
             $table->json('visibility')->nullable();
@@ -29,6 +35,7 @@ return new class extends Migration
             $table->timestamps();
 
             $table->index(['section', 'grid_key', 'owner_type', 'owner_id']);
+            $table->unique(['section', 'grid_key', 'owner_type', 'owner_id', 'name'], 'datagrid_views_owner_grid_name_unique');
         });
     }
 
