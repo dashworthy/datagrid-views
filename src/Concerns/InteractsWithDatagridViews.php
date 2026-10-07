@@ -20,11 +20,12 @@ use Dashworthy\DatagridViews\Http\Requests\IndexDatagridViewRequest;
 use Dashworthy\DatagridViews\Http\Requests\StoreDatagridViewRequest;
 use Dashworthy\DatagridViews\Http\Requests\UpdateDatagridViewRequest;
 use Dashworthy\DatagridViews\Http\Resources\DatagridViewResource;
-use Dashworthy\DatagridViews\Models\DatagridView;
 use Dashworthy\DatagridViews\Support\DatagridViewState;
+use Dashworthy\Visualizations\Contracts\HandlesDataGridViews;
 use Dashworthy\Visualizations\DataGrids\Abstracts\DataGrid;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Symfony\Component\HttpFoundation\Response;
 
 /**
  * Gives a data grid saved views. Use it on a visualizations DataGrid that
@@ -48,18 +49,17 @@ use Illuminate\Http\Request;
  * DatagridViewPolicy and the grid's own permission (403) and validates the
  * body (422) before the hook runs its action.
  *
- * The signatures match visualizations' view-hook declarations: the plain
- * request, plus `string $view` on the hooks that name one view. That `$view`
- * argument is not used: Laravel passes route parameters positionally, so
- * behind a host prefix or domain with its own parameter (a `{tenant}`) it
- * holds that parameter instead. `{view}` is read from the route by name and
- * looked up as a scalar id, never bound to a model. Every hook answers with a
- * JsonResponse; destroy's is an empty 204.
+ * The signatures are exactly those {@see HandlesDataGridViews} declares: each
+ * hook takes only the request. `{view}` is read from the route by name (never
+ * by position, which behind a host prefix or domain with its own parameter,
+ * a `{tenant}`, would be that parameter) and looked up as a scalar id, never
+ * bound to a model. Destroy answers an empty 204; the default hooks answer
+ * the view as JSON, though they declare the interface's Symfony Response.
  *
- * It also adds `views: true` to the grid's schema by overriding
- * `getSchemaBody()`. A grid that overrides `getSchemaBody()` itself replaces
- * this one, so it must add the flag too: `[...parent::getSchemaBody(), 'views' => true]`
- * when it extends a grid, or the same key in its own array.
+ * It also adds `views: true` to the grid's schema by overriding the static
+ * `schema()`, so a grid may override `getSchemaBody()` freely. A grid that
+ * overrides `schema()` itself must keep the flag:
+ * `[...parent::schema(), ...]` does.
  *
  * @phpstan-require-extends DataGrid
  *
@@ -75,9 +75,7 @@ trait InteractsWithDatagridViews
     {
         $form = IndexDatagridViewRequest::forGrid($this, $request);
 
-        $views = DatagridView::query()
-            ->visibleTo($form->actor(), $form->sectionKey())
-            ->where('grid_key', $form->gridKey())
+        $views = $form->gridViews()
             ->orderByDesc('is_default')
             ->orderByRaw('lower(name)')
             ->orderBy('id')
@@ -107,7 +105,7 @@ trait InteractsWithDatagridViews
         return DatagridViewResource::make($view)->response()->setStatusCode(201);
     }
 
-    public function handleViewUpdate(Request $request, string $view): JsonResponse
+    public function handleViewUpdate(Request $request): JsonResponse
     {
         $form = UpdateDatagridViewRequest::forGrid($this, $request);
 
@@ -129,19 +127,19 @@ trait InteractsWithDatagridViews
      * Deleting the default leaves the grid with no default; no other view is
      * promoted.
      */
-    public function handleViewDestroy(Request $request, string $view): JsonResponse
+    public function handleViewDestroy(Request $request): Response
     {
         $form = DeleteDatagridViewRequest::forGrid($this, $request);
 
         DeleteDatagridViewAction::run(new DeleteDatagridViewData($form->datagridView()));
 
-        return response()->json(null, 204);
+        return response()->noContent();
     }
 
     /**
      * Makes the view the actor's only default for this grid.
      */
-    public function handleViewDefault(Request $request, string $view): JsonResponse
+    public function handleViewDefault(Request $request): Response
     {
         $form = DefaultDatagridViewRequest::forGrid($this, $request);
 
@@ -150,7 +148,7 @@ trait InteractsWithDatagridViews
         return DatagridViewResource::make($view)->response();
     }
 
-    public function handleViewClearDefault(Request $request, string $view): JsonResponse
+    public function handleViewClearDefault(Request $request): Response
     {
         $form = DefaultDatagridViewRequest::forGrid($this, $request);
 
@@ -160,15 +158,19 @@ trait InteractsWithDatagridViews
     }
 
     /**
-     * The grid's own schema body plus `views: true`, which tells the client
-     * this grid keeps saved views.
+     * The grid's schema plus `views: true`, which tells the client this grid
+     * keeps saved views.
+     *
+     * Added to `schema()` rather than to `getSchemaBody()`: grids customise
+     * their schema body, and one that overrode it would silently drop a flag
+     * added there. A grid that overrides `schema()` itself must keep the flag.
      *
      * @return array<string, mixed>
      */
-    protected function getSchemaBody(): array
+    public static function schema(): array
     {
         return [
-            ...parent::getSchemaBody(),
+            ...parent::schema(),
             'views' => true,
         ];
     }

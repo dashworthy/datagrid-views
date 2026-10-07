@@ -9,6 +9,7 @@ use Dashworthy\DatagridViews\Support\DatagridViewSections;
 use Dashworthy\Visualizations\DataGrids\Abstracts\DataGrid;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Contracts\Auth\Authenticatable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Http\FormRequest;
@@ -70,11 +71,45 @@ abstract class DatagridViewRequest extends FormRequest
     }
 
     /**
+     * The longest grid key the `datagrid_views.grid_key` column holds.
+     */
+    public const int MAX_GRID_KEY_LENGTH = 128;
+
+    /**
      * The key the grid's views are stored under: its visualization key.
+     *
+     * A key longer than the column would be truncated or refused depending on
+     * the database (an error on strict MySQL, kept whole by SQLite), so it
+     * fails here, on every hook, before any query.
      */
     public function gridKey(): string
     {
-        return $this->grid()->getVisualizationKey();
+        $gridKey = $this->grid()->getVisualizationKey();
+
+        if (mb_strlen($gridKey) > self::MAX_GRID_KEY_LENGTH) {
+            throw new LogicException(sprintf(
+                'The visualization key [%s] of %s is %d characters, longer than the %d characters the datagrid_views.grid_key column holds. Shorten its route prefix or override getVisualizationKey().',
+                $gridKey,
+                $this->grid()::class,
+                mb_strlen($gridKey),
+                self::MAX_GRID_KEY_LENGTH,
+            ));
+        }
+
+        return $gridKey;
+    }
+
+    /**
+     * The actor's visible views of this grid in its section: the one scope
+     * both listing and every single-view lookup run inside.
+     *
+     * @return Builder<DatagridView>
+     */
+    public function gridViews(): Builder
+    {
+        return DatagridView::query()
+            ->visibleTo($this->actor(), $this->sectionKey())
+            ->where('grid_key', $this->gridKey());
     }
 
     /**
@@ -100,10 +135,10 @@ abstract class DatagridViewRequest extends FormRequest
      *
      * Another owner's view, another section's or another grid's, an unknown id
      * and anything that is not an id all 404 alike. The id is read from the
-     * route bag by name, never from the hook's `$view` argument: Laravel
-     * passes route parameters to a controller method positionally, so behind
-     * a host prefix or domain carrying its own parameter (a `{tenant}`) that
-     * argument holds the tenant, not the view.
+     * route bag by name, never by position: Laravel passes route parameters
+     * to a controller method positionally, so behind a host prefix or domain
+     * carrying its own parameter (a `{tenant}`) the first one is the tenant,
+     * not the view.
      *
      * @throws ModelNotFoundException<DatagridView>
      */
@@ -125,17 +160,19 @@ abstract class DatagridViewRequest extends FormRequest
             || $this->actor()->can($grid->getPermissionName());
     }
 
+    /**
+     * The actor is checked first, so a guest gets a 401 whatever the id.
+     */
     private function findDatagridView(): DatagridView
     {
+        $this->actor();
+
         $id = $this->route('view');
 
         if (! is_string($id) || ! ctype_digit($id)) {
             throw (new ModelNotFoundException)->setModel(DatagridView::class);
         }
 
-        return DatagridView::query()
-            ->visibleTo($this->actor(), $this->sectionKey())
-            ->where('grid_key', $this->gridKey())
-            ->findOrFail((int) $id);
+        return $this->gridViews()->findOrFail((int) $id);
     }
 }

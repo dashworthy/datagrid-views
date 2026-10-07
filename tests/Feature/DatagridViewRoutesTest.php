@@ -1,13 +1,17 @@
 <?php
 
+use Dashworthy\DatagridViews\Contracts\HasDatagridViews;
 use Dashworthy\DatagridViews\Http\Requests\IndexDatagridViewRequest;
 use Dashworthy\DatagridViews\Tests\Fixtures\DataGrids\MembersDataGrid;
+use Dashworthy\DatagridViews\Tests\Fixtures\DataGrids\ReportsDataGrid;
 use Dashworthy\DatagridViews\Tests\Fixtures\DataGrids\TenantMembersDataGrid;
 use Dashworthy\DatagridViews\Tests\Fixtures\User;
+use Dashworthy\Visualizations\Contracts\HandlesDataGridViews;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Route as RoutingRoute;
 use Illuminate\Support\Facades\Route;
+use Symfony\Component\HttpFoundation\Response;
 
 /*
  | A grid opts into saved views by using InteractsWithDatagridViews, and
@@ -51,24 +55,48 @@ test('the trait replaces the per-section endpoints: no datagridViewSection macro
 });
 
 /*
- | `Route::dataGrid()` calls the hooks as a controller, and visualizations is
- | gaining an interface that declares them: the plain request the container
- | resolves, plus `string $view` on the hooks that name one view, answering
- | with a JsonResponse.
+ | A grid using the trait implements visualizations' HandlesDataGridViews,
+ | which is what makes `Route::dataGrid()` mount all six view routes. Each hook
+ | takes only the request (the view id is read by name from the route), and
+ | answers with a JsonResponse, or a Symfony Response where the interface
+ | allows a bodiless answer.
  */
-test('each hook has the signature visualizations declares for it', function (string $hook, array $parameters) {
+test('a grid using the trait is a HandlesDataGridViews, and a grid without it is not', function () {
+    expect(new MembersDataGrid)->toBeInstanceOf(HandlesDataGridViews::class)
+        ->and(new MembersDataGrid)->toBeInstanceOf(HasDatagridViews::class)
+        ->and(new ReportsDataGrid)->not->toBeInstanceOf(HandlesDataGridViews::class);
+});
+
+test('each hook has exactly the signature HandlesDataGridViews declares', function (string $hook, string $returnType) {
     $method = new ReflectionMethod(MembersDataGrid::class, $hook);
+    $declared = new ReflectionMethod(HandlesDataGridViews::class, $hook);
 
     expect($method->isPublic())->toBeTrue()
-        ->and(collect($method->getParameters())->mapWithKeys(fn (ReflectionParameter $parameter): array => [$parameter->getName() => (string) $parameter->getType()])->all())->toBe($parameters)
-        ->and((string) $method->getReturnType())->toBe(JsonResponse::class);
+        ->and(collect($method->getParameters())->mapWithKeys(fn (ReflectionParameter $parameter): array => [$parameter->getName() => (string) $parameter->getType()])->all())->toBe(['request' => Request::class])
+        ->and((string) $method->getReturnType())->toBe($returnType)
+        ->and((string) $declared->getReturnType())->toBe($returnType);
 })->with([
-    ['handleViews', ['request' => Request::class]],
-    ['handleViewStore', ['request' => Request::class]],
-    ['handleViewUpdate', ['request' => Request::class, 'view' => 'string']],
-    ['handleViewDestroy', ['request' => Request::class, 'view' => 'string']],
-    ['handleViewDefault', ['request' => Request::class, 'view' => 'string']],
-    ['handleViewClearDefault', ['request' => Request::class, 'view' => 'string']],
+    ['handleViews', JsonResponse::class],
+    ['handleViewStore', JsonResponse::class],
+    ['handleViewUpdate', JsonResponse::class],
+    ['handleViewDestroy', Response::class],
+    ['handleViewDefault', Response::class],
+    ['handleViewClearDefault', Response::class],
+]);
+
+test('all six view routes mount behind a host prefix that carries its own parameter', function (string $suffix, string $method, string $uri) {
+    $route = Route::getRoutes()->getByName('grids.tenant-members'.$suffix);
+
+    expect($route)->not->toBeNull()
+        ->and($route->uri())->toBe($uri)
+        ->and($route->methods())->toContain($method);
+})->with([
+    ['.views', 'GET', 'api/{tenant}/grids/tenant-members/views'],
+    ['.views.store', 'POST', 'api/{tenant}/grids/tenant-members/views'],
+    ['.views.update', 'PATCH', 'api/{tenant}/grids/tenant-members/views/{view}'],
+    ['.views.destroy', 'DELETE', 'api/{tenant}/grids/tenant-members/views/{view}'],
+    ['.views.default', 'PUT', 'api/{tenant}/grids/tenant-members/views/{view}/default'],
+    ['.views.clear-default', 'DELETE', 'api/{tenant}/grids/tenant-members/views/{view}/default'],
 ]);
 
 test('a view request resolved on its own, outside a grid\'s hook, refuses to guess its grid', function () {

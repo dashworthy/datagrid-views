@@ -60,22 +60,17 @@ Route::middleware('auth')->group(function () {
 });
 ```
 
-`Route::dataGrid()` (from `dashworthy/visualizations`) mounts the grid's view routes because the grid has the trait's hooks. A grid without the trait gets none. The package registers no routes of its own.
+`Route::dataGrid()` (from `dashworthy/visualizations`) mounts the grid's view routes because `HasDatagridViews` extends visualizations' `HandlesDataGridViews`, whose six hooks the trait implements. A grid without the trait gets none. The package registers no routes of its own.
 
-The views are stored under the grid's section and its visualization key (the `visualization_key` its schema sends, e.g. `grids.members`). The client never sends either one. They come from the grid handling the request, so a view saved on one grid never shows on another.
+The views are stored under the grid's section and its visualization key (the `visualization_key` its schema sends, e.g. `grids.members`). The client never sends either one. They come from the grid handling the request, so a view saved on one grid never shows on another. The key may be at most 128 characters, the size of the `grid_key` column; a longer one throws on every view request rather than storing a truncated key.
+
+**Renaming a grid orphans its saved views.** The key is derived from the class name and `getRoutePrefix()`, so renaming the class or changing its prefix changes the key, and every view saved under the old key silently stops showing. To keep them, override `getVisualizationKey()` on the renamed grid to return the old key.
 
 A request to a grid whose section is not listed in config, or whose key another listed enum also uses, throws instead of borrowing another section's rules. If the grid names a permission with `getPermissionName()`, its views are behind the same gate as its data and schema. A guest gets a 401 even if the host forgot the auth middleware.
 
 ### Schema flag
 
-The trait adds `views: true` to the grid's schema by overriding `getSchemaBody()`, so the client knows to offer views. If a grid overrides `getSchemaBody()` itself, its method replaces the trait's, and it must add the flag too:
-
-```php
-protected function getSchemaBody(): array
-{
-    return [...parent::getSchemaBody(), 'my_key' => '...', 'views' => true];
-}
-```
+The trait adds `views: true` to the grid's schema by overriding the static `schema()`, so the client knows to offer views. A grid may override `getSchemaBody()` freely. A grid that overrides `schema()` itself must keep the flag, for example by spreading `parent::schema()`.
 
 ## Routes
 

@@ -4,6 +4,7 @@ namespace Dashworthy\DatagridViews\Tests;
 
 use Dashworthy\DatagridViews\DatagridViewsServiceProvider;
 use Dashworthy\DatagridViews\Tests\Fixtures\DataGrids\AdminMembersDataGrid;
+use Dashworthy\DatagridViews\Tests\Fixtures\DataGrids\CustomSchemaMembersDataGrid;
 use Dashworthy\DatagridViews\Tests\Fixtures\DataGrids\GuardedMembersDataGrid;
 use Dashworthy\DatagridViews\Tests\Fixtures\DataGrids\InvoicesDataGrid;
 use Dashworthy\DatagridViews\Tests\Fixtures\DataGrids\MembersDataGrid;
@@ -54,6 +55,7 @@ class TestCase extends Orchestra
             Route::dataGrid(AdminMembersDataGrid::class);
             Route::dataGrid(ScriptedMembersDataGrid::class);
             Route::dataGrid(GuardedMembersDataGrid::class);
+            Route::dataGrid(CustomSchemaMembersDataGrid::class);
             Route::dataGrid(ReportsDataGrid::class);
         });
 

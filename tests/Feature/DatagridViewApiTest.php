@@ -4,10 +4,14 @@ use Dashworthy\DatagridViews\Models\DatagridView;
 use Dashworthy\DatagridViews\Tests\Fixtures\Admin;
 use Dashworthy\DatagridViews\Tests\Fixtures\CollidingSection;
 use Dashworthy\DatagridViews\Tests\Fixtures\DataGrids\GuardedMembersDataGrid;
+use Dashworthy\DatagridViews\Tests\Fixtures\DataGrids\MaximumKeyDataGrid;
 use Dashworthy\DatagridViews\Tests\Fixtures\DataGrids\MembersDataGrid;
+use Dashworthy\DatagridViews\Tests\Fixtures\DataGrids\OverlongKeyDataGrid;
 use Dashworthy\DatagridViews\Tests\Fixtures\ScriptedAccess;
 use Dashworthy\DatagridViews\Tests\Fixtures\TestSection;
 use Dashworthy\DatagridViews\Tests\Fixtures\User;
+use Illuminate\Database\Events\QueryExecuted;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Route;
 
@@ -364,6 +368,26 @@ test('a view id that does not exist, or is not an id, is not found', function (s
         ->assertNotFound();
 })->with(singleViewEndpoints())->with(['999999', 'abc', '1.5', '-1']);
 
+/*
+ | SQLite answers `findOrFail('abc')` with a 404 anyway; PostgreSQL would
+ | raise an error casting it to the integer key. So the guard must refuse
+ | anything but digits before any query reaches the views table.
+ */
+test('a view id that is not all digits is refused before any query reaches the views table', function (string $method, string $suffix, array $payload, string $id) {
+    $this->actingAs($this->owner);
+
+    $viewQueries = [];
+    DB::listen(function (QueryExecuted $query) use (&$viewQueries): void {
+        if (str_contains($query->sql, 'datagrid_views')) {
+            $viewQueries[] = $query->sql;
+        }
+    });
+
+    $this->json($method, "{$this->views}/{$id}{$suffix}", $payload)->assertNotFound();
+
+    expect($viewQueries)->toBe([]);
+})->with(singleViewEndpoints())->with(['abc', '1.5', '-1', '1e3', ' 1']);
+
 test('a guest is refused by every route', function (string $method, string $suffix, array $payload) {
     $this->json($method, $this->base.$suffix, $payload)->assertUnauthorized();
 
@@ -377,13 +401,18 @@ test('a guest can neither list nor create views', function () {
     expect(DatagridView::query()->where('name', 'Nope')->exists())->toBeFalse();
 });
 
-test('a host that mounts a grid without authentication still refuses a guest with a 401', function () {
+test('a host that mounts a grid without authentication still refuses a guest with a 401 on every hook', function () {
     Route::prefix('open')->group(fn () => Route::dataGrid(MembersDataGrid::class));
 
     $this->getJson('/open/grids/members/views')->assertUnauthorized();
     $this->postJson('/open/grids/members/views', ['name' => 'Nope'])->assertUnauthorized();
-    $this->patchJson("/open/grids/members/views/{$this->view->id}", ['name' => 'Nope'])->assertUnauthorized();
 
+    foreach (singleViewEndpoints() as [$method, $suffix, $payload]) {
+        $this->json($method, "/open/grids/members/views/{$this->view->id}{$suffix}", $payload)->assertUnauthorized();
+        $this->json($method, "/open/grids/members/views/abc{$suffix}", $payload)->assertUnauthorized();
+    }
+
+    expectUntouched($this->view, 'Active members');
     expect(DatagridView::query()->where('name', 'Nope')->exists())->toBeFalse();
 });
 
@@ -441,6 +470,35 @@ test('an actor the grid\'s own permission admits may use its views', function ()
     $id = $this->actingAs($this->owner)->postJson('/api/grids/guarded-members/views', ['name' => 'Allowed'])->assertCreated()->json('data.id');
     $this->actingAs($this->owner)->getJson('/api/grids/guarded-members/views')->assertOk()->assertJsonPath('data.0.id', $id);
     $this->actingAs($this->owner)->putJson("/api/grids/guarded-members/views/{$id}/default")->assertOk();
+});
+
+// --- the grid's key ---
+
+test('a grid whose visualization key is longer than the grid_key column fails clearly instead of storing a truncated key', function () {
+    Route::middleware('auth')->prefix('api')->group(fn () => Route::dataGrid(OverlongKeyDataGrid::class));
+    $path = (new OverlongKeyDataGrid)->getRoutePath();
+
+    $this->withoutExceptionHandling();
+
+    expect(fn () => $this->actingAs($this->owner)->postJson("/api/{$path}/views", ['name' => 'Too long']))
+        ->toThrow(LogicException::class, 'longer than the 128 characters');
+
+    expect(fn () => $this->actingAs($this->owner)->getJson("/api/{$path}/views"))
+        ->toThrow(LogicException::class, 'longer than the 128 characters');
+
+    expect(DatagridView::query()->where('name', 'Too long')->exists())->toBeFalse();
+});
+
+test('a grid key of exactly 128 characters is accepted', function () {
+    Route::middleware('auth')->prefix('api')->group(fn () => Route::dataGrid(MaximumKeyDataGrid::class));
+    $grid = new MaximumKeyDataGrid;
+
+    expect(mb_strlen($grid->getVisualizationKey()))->toBe(128);
+
+    $this->actingAs($this->owner)
+        ->postJson("/api/{$grid->getRoutePath()}/views", ['name' => 'Just fits'])
+        ->assertCreated()
+        ->assertJsonPath('data.grid_key', $grid->getVisualizationKey());
 });
 
 // --- the grid's section ---

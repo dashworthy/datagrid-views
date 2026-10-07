@@ -1,5 +1,6 @@
 <?php
 
+use Dashworthy\DatagridViews\Tests\Fixtures\DataGrids\CustomSchemaMembersDataGrid;
 use Dashworthy\DatagridViews\Tests\Fixtures\DataGrids\MembersDataGrid;
 use Dashworthy\DatagridViews\Tests\Fixtures\DataGrids\ReportsDataGrid;
 use Dashworthy\DatagridViews\Tests\Fixtures\User;
@@ -20,12 +21,25 @@ test('a grid that does not use the trait has no views flag in its schema', funct
     expect(ReportsDataGrid::schema())->not->toHaveKey('views');
 });
 
+test('a grid that overrides getSchemaBody() still says it keeps views', function () {
+    expect(CustomSchemaMembersDataGrid::schema())
+        ->toHaveKey('views', true)
+        ->toHaveKey('density', 'compact')
+        ->toHaveKeys(['visualization_key', 'columns', 'default_sorts', 'floating_filters']);
+});
+
 test('the schema route answers with the views flag', function () {
     $this->actingAs(User::factory()->create())
         ->postJson('/api/grids/members/schema')
         ->assertOk()
         ->assertJsonPath('views', true)
         ->assertJsonPath('visualization_key', 'grids.members');
+
+    $this->actingAs(User::factory()->create())
+        ->postJson('/api/grids/custom-schema-members/schema')
+        ->assertOk()
+        ->assertJsonPath('views', true)
+        ->assertJsonPath('density', 'compact');
 
     $this->actingAs(User::factory()->create())
         ->postJson('/api/grids/reports/schema')
