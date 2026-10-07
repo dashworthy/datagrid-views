@@ -2,7 +2,10 @@
 
 namespace Dashworthy\DatagridViews\Models;
 
+use Dashworthy\DatagridViews\Contracts\GovernsDatagridViewAccess;
 use Dashworthy\DatagridViews\Database\Factories\DatagridViewFactory;
+use Dashworthy\DatagridViews\Support\DatagridViewSections;
+use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -90,6 +93,40 @@ class DatagridView extends Model
     {
         $query->where('owner_type', $owner->getMorphClass())
             ->where('owner_id', $owner->getKey());
+    }
+
+    /**
+     * Narrow the query to the views $actor may see in one section: that
+     * section's rows only, further narrowed by the section's access rule
+     * ({@see GovernsDatagridViewAccess::scopeVisible()}).
+     *
+     * The rule's constraints are wrapped in their own group, so an `orWhere`
+     * inside it can never escape the section constraint.
+     *
+     * @param  Builder<DatagridView>  $query
+     */
+    public function scopeVisibleTo(Builder $query, Authenticatable&Model $actor, string $section): void
+    {
+        $access = app(DatagridViewSections::class)->find($section)->datagridViewAccess();
+
+        $query->where('section', $section)
+            ->where(function (Builder $query) use ($access, $actor): void {
+                $access->scopeVisible($query, $actor);
+            });
+    }
+
+    /**
+     * Narrow the query to every view sharing $view's section, grid and owner,
+     * $view included: the set within which a name is unique and at most one
+     * view is the default.
+     *
+     * @param  Builder<DatagridView>  $query
+     */
+    public function scopeSiblingsOf(Builder $query, DatagridView $view): void
+    {
+        $query->forGrid($view->section, $view->grid_key)
+            ->where('owner_type', $view->owner_type)
+            ->where('owner_id', $view->owner_id);
     }
 
     protected static function newFactory(): DatagridViewFactory

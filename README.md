@@ -39,6 +39,24 @@ Route::middleware(['auth'])->group(function () {
 
 Mounting a section that is not listed in config, or whose key another listed enum also uses, throws while routes load.
 
+The group must run authentication and `SubstituteBindings` (the `web` and `api` groups do).
+
+## Endpoints
+
+Each mounted section `{key}` gets a JSON API, named `{key}.datagrid-views.*`:
+
+| Name | Method and URI | Body | Answer |
+| --- | --- | --- | --- |
+| `index` | `GET {key}/datagrid-views?grid={grid_key}` | | `{data: View[]}`: the actor's views of that grid, the default first, then by name |
+| `store` | `POST {key}/datagrid-views` | `grid_key`, `name`, optional `filter_sets`, `sorts`, `visibility`, `page_size`, `is_default` | 201 `{data: View}` |
+| `show` | `GET {key}/datagrid-views/{datagridView}` | | `{data: View}` |
+| `update` | `PATCH {key}/datagrid-views/{datagridView}` | any of `name`, `filter_sets`, `sorts`, `visibility`, `page_size` | `{data: View}` |
+| `destroy` | `DELETE {key}/datagrid-views/{datagridView}` | | 204 |
+| `default` | `PUT {key}/datagrid-views/{datagridView}/default` | | `{data: View}`, now the grid's only default |
+| `clear-default` | `DELETE {key}/datagrid-views/{datagridView}/default` | | `{data: View}` with `is_default: false` |
+
+A `View` is `{id, grid_key, name, filter_sets, sorts, visibility, page_size, is_default, updated_at}`. The state fields use the same wire shapes as `dashboard_widgets`. A view of another owner or another section answers 404, and an actor the section's `canUse()` refuses gets 403.
+
 ## Testing
 
 ```bash
