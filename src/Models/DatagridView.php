@@ -42,19 +42,17 @@ class DatagridView extends Model
     use HasFactory;
 
     /**
-     * owner_type / owner_id are deliberately absent: ownership is assigned
-     * structurally via owner()->associate() from the section's access rule,
-     * never mass-assigned from request input.
+     * Only the settings a user edits. The owner, section and grid decide whose
+     * scope a view lives in, and the default flag is held to one per grid by
+     * SetDefaultDatagridViewAction's lock, so none of them can be filled from
+     * input: the actions set them as properties.
      */
     protected $fillable = [
-        'section',
-        'grid_key',
         'name',
         'filter_sets',
         'sorts',
         'visibility',
         'page_size',
-        'is_default',
     ];
 
     protected $casts = [

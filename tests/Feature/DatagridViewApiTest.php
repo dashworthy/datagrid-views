@@ -234,7 +234,7 @@ test('the owner can delete their view', function () {
 });
 
 test('deleting the default view leaves the grid with no default', function () {
-    $this->view->update(['is_default' => true]);
+    $this->view->forceFill(['is_default' => true])->save();
     DatagridView::factory()->ownedBy($this->owner)->forGrid('app', 'members')->create();
 
     $this->actingAs($this->owner)->deleteJson($this->base)->assertNoContent();
@@ -257,7 +257,7 @@ test('put default makes the view the actor\'s only default for the grid', functi
 });
 
 test('delete default clears the view\'s default flag', function () {
-    $this->view->update(['is_default' => true]);
+    $this->view->forceFill(['is_default' => true])->save();
 
     $this->actingAs($this->owner)
         ->deleteJson("{$this->base}/default")

@@ -17,8 +17,9 @@ use Illuminate\Validation\ValidationException;
  * access rule for the actor and is set structurally, never mass-assigned.
  *
  * A view created as the default goes through {@see SetDefaultDatagridViewAction}
- * inside this action's transaction, so the owner's previous default for the
- * grid is cleared under the same lock and a refused insert changes nothing.
+ * inside this action's transaction, after the insert, so the owner's previous
+ * default for the grid is cleared under its lock and a refused insert changes
+ * nothing.
  *
  * @extends Action<CreateDatagridViewData, DatagridView>
  */
@@ -29,15 +30,15 @@ class CreateDatagridViewAction extends Action
         $owner = app(DatagridViewSections::class)->find($data->section)->datagridViewAccess()->ownerFor($data->actor);
 
         $view = new DatagridView([
-            'section' => $data->section,
-            'grid_key' => $data->gridKey,
             'name' => $data->name,
             'filter_sets' => DatagridViewState::toWire($data->filterSets),
             'sorts' => DatagridViewState::toWire($data->sorts),
             'visibility' => DatagridViewState::toWire($data->visibility),
             'page_size' => $data->pageSize,
-            'is_default' => false,
         ]);
+        $view->section = $data->section;
+        $view->grid_key = $data->gridKey;
+        $view->is_default = false;
         $view->owner()->associate($owner);
 
         try {
@@ -46,6 +47,10 @@ class CreateDatagridViewAction extends Action
             throw ValidationException::withMessages(['name' => UniqueDatagridViewName::MESSAGE]);
         }
 
+        // The insert must come before SetDefault's locking read, never after
+        // it: on InnoDB that read then waits on a concurrent create's
+        // uncommitted row instead of missing it. Locking first would let two
+        // creates each lock an empty range and both become the default.
         if ($data->isDefault) {
             SetDefaultDatagridViewAction::run(new SetDefaultDatagridViewData($view));
         }

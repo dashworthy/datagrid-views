@@ -32,14 +32,14 @@ List every section enum in `config/datagrid-views.php`:
 Then mount each section inside the host's own middleware group:
 
 ```php
-Route::middleware(['auth'])->group(function () {
+Route::middleware(['auth', SubstituteBindings::class])->group(function () {
     Route::datagridViewSection(AppSection::Admin);
 });
 ```
 
 Mounting a section that is not listed in config, or whose key another listed enum also uses, throws while routes load.
 
-The group must run authentication and `SubstituteBindings` (the `web` and `api` groups do).
+The group must run authentication and `SubstituteBindings` (the `web` and `api` groups already do).
 
 ## Endpoints
 
@@ -56,6 +56,15 @@ Each mounted section `{key}` gets a JSON API, named `{key}.datagrid-views.*`:
 | `clear-default` | `DELETE {key}/datagrid-views/{datagridView}/default` | | `{data: View}` with `is_default: false` |
 
 A `View` is `{id, grid_key, name, filter_sets, sorts, visibility, page_size, is_default, updated_at}`. The state fields use the same wire shapes as `dashboard_widgets`. A view of another owner or another section answers 404, and an actor the section's `canUse()` refuses gets 403.
+
+### Null versus empty state
+
+`filter_sets`, `sorts` and `visibility` distinguish `null` from `[]`:
+
+- `null` (or leaving the field out when saving a new view) means the view does not save that part of the grid; the page's own setup applies when the view is opened. The same goes for `page_size`.
+- `[]` means "explicitly none": no filters, no sorts, nothing hidden.
+
+`PATCH` refuses `null` for every field with a 422. Leave a field out to keep it as it is, or send `[]` to save "none".
 
 ## Testing
 

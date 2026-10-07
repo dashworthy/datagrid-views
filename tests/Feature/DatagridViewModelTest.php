@@ -70,17 +70,32 @@ test('is_default is cast to a boolean', function () {
     expect(DatagridView::query()->findOrFail($view->id)->is_default)->toBeTrue();
 });
 
-test('the fillable attributes are exactly the view\'s own settings, never its owner', function () {
+test('the fillable attributes are exactly the view\'s own settings, never its owner, place or default flag', function () {
     expect((new DatagridView)->getFillable())->toBe([
-        'section',
-        'grid_key',
         'name',
         'filter_sets',
         'sorts',
         'visibility',
         'page_size',
-        'is_default',
     ]);
+});
+
+/*
+ | A view's section and grid decide whose scope it lives in, and its default
+ | flag is held to one per grid by SetDefaultDatagridViewAction's lock. None
+ | of them may be changed by filling the model from input.
+ */
+test('section, grid key and default flag cannot be mass-assigned', function () {
+    $view = DatagridView::factory()->ownedBy($this->owner)->forGrid('app', 'members')->create();
+
+    $view->update(['section' => 'admin', 'grid_key' => 'invoices', 'is_default' => true, 'name' => 'Renamed']);
+
+    $fresh = $view->fresh();
+
+    expect($fresh->section)->toBe('app')
+        ->and($fresh->grid_key)->toBe('members')
+        ->and($fresh->is_default)->toBeFalse()
+        ->and($fresh->name)->toBe('Renamed');
 });
 
 test('owner resolves the polymorphic owner', function () {

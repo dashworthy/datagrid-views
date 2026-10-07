@@ -140,13 +140,52 @@ test('store accepts page sizes at both ends of the range', function (int $pageSi
         ->assertJsonPath('data.page_size', $pageSize);
 })->with([1, 500]);
 
-test('store accepts a filter whose value is null', function () {
-    $filterSets = [['filters' => [['field' => 'column_Archived At', 'value' => null, 'filter_operator' => 'equals']], 'filter_set_operator' => 'and']];
+/**
+ * One filter set holding a single filter with $value.
+ *
+ * @return list<array<string, mixed>>
+ */
+function filterSetsWithValue(mixed $value): array
+{
+    return [['filters' => [['field' => 'column_Status', 'value' => $value, 'filter_operator' => 'equals']], 'filter_set_operator' => 'and']];
+}
 
+/*
+ | A filter value is what visualizations' FilterData carries: a scalar, null,
+ | or a flat list of scalars (an `in` / `notIn` filter).
+ */
+test('store accepts a filter value that is a scalar, null or a flat list of scalars', function (mixed $value) {
     $this->actingAs($this->owner)
-        ->postJson('/api/app/datagrid-views', storeView(['filter_sets' => $filterSets]))
+        ->postJson('/api/app/datagrid-views', storeView(['filter_sets' => filterSetsWithValue($value)]))
         ->assertCreated()
-        ->assertJsonPath('data.filter_sets', $filterSets);
+        ->assertJsonPath('data.filter_sets', filterSetsWithValue($value));
+})->with([
+    'string' => ['-30 days'],
+    'integer' => [3],
+    'float' => [2.5],
+    'boolean' => [true],
+    'null' => [null],
+    'empty list' => [[]],
+    'list of scalars' => [['active', 2, false, null]],
+]);
+
+test('store refuses a filter value that is an object, a nested list or an oversized list', function (mixed $value) {
+    $this->actingAs($this->owner)
+        ->postJson('/api/app/datagrid-views', storeView(['filter_sets' => filterSetsWithValue($value)]))
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors('filter_sets.0.filters.0.value');
+})->with([
+    'object' => [['from' => '2026-01-01', 'to' => '2026-02-01']],
+    'nested list' => [[['active'], ['invited']]],
+    'list holding an object' => [['active', ['nested' => true]]],
+    'list over 500 entries' => [range(1, 501)],
+]);
+
+test('update refuses a filter value that is an object', function () {
+    $this->actingAs($this->owner)
+        ->patchJson("/api/app/datagrid-views/{$this->view->id}", ['filter_sets' => filterSetsWithValue(['a' => 1])])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors('filter_sets.0.filters.0.value');
 });
 
 test('update refuses grid state in the wrong shape, and null for a state field', function (array $state, string $field) {
