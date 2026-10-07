@@ -1,0 +1,73 @@
+{
+    "name": "dashworthy/datagrid-views",
+    "description": "Saved, private views of a data grid's columns, sorts, filters and page size, stored per section.",
+    "keywords": [
+        "Dashworthy",
+        "laravel",
+        "datagrid-views"
+    ],
+    "homepage": "https://github.com/dashworthy/datagrid-views",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Andrew Leach",
+            "email": "7387639+andyleach@users.noreply.github.com",
+            "role": "Developer"
+        }
+    ],
+    "require": {
+        "php": "^8.4",
+        "dashworthy/foundry": "^0.1.0",
+        "illuminate/contracts": "^12.0||^13.0",
+        "dashworthy/visualizations": "^1.0",
+        "spatie/laravel-package-tools": "^1.16"
+    },
+    "require-dev": {
+        "laravel/pint": "^1.14",
+        "nunomaduro/collision": "^8.8",
+        "larastan/larastan": "^3.0",
+        "orchestra/testbench": "^10.0.0||^11.0.0",
+        "pestphp/pest": "^4.0",
+        "pestphp/pest-plugin-arch": "^4.0",
+        "pestphp/pest-plugin-laravel": "^4.0",
+        "phpstan/extension-installer": "^1.4",
+        "phpstan/phpstan-deprecation-rules": "^2.0",
+        "phpstan/phpstan-phpunit": "^2.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "Dashworthy\\DatagridViews\\": "src/",
+            "Dashworthy\\DatagridViews\\Database\\Factories\\": "database/factories/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Dashworthy\\DatagridViews\\Tests\\": "tests/",
+            "Workbench\\App\\": "workbench/app/"
+        }
+    },
+    "scripts": {
+        "post-autoload-dump": "@composer run prepare",
+        "prepare": "@php vendor/bin/testbench package:discover --ansi",
+        "analyse": "vendor/bin/phpstan analyse",
+        "test": "vendor/bin/pest",
+        "test-coverage": "vendor/bin/pest --coverage",
+        "format": "vendor/bin/pint"
+    },
+    "config": {
+        "sort-packages": true,
+        "allow-plugins": {
+            "pestphp/pest-plugin": true,
+            "phpstan/extension-installer": true
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Dashworthy\\DatagridViews\\DatagridViewsServiceProvider"
+            ]
+        }
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true
+}
