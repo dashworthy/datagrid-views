@@ -1,15 +1,6 @@
 <?php
 
-use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Schema;
-
-/**
- * @return Collection<string, array{name: string, type_name: string, nullable: bool, default: mixed}>
- */
-function datagridViewColumns(): Collection
-{
-    return collect(Schema::getColumns('datagrid_views'))->keyBy('name');
-}
 
 test('the migration creates the datagrid_views table with every column the spec lists', function () {
     expect(Schema::hasTable('datagrid_views'))->toBeTrue()

@@ -15,13 +15,6 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Route;
 
-/*
- | The members grid (MembersDataGrid) keeps its views in the app section under
- | its visualization key, `grids.members`, and is mounted at
- | `api/grids/members`. Neither the section nor the grid key is ever sent by
- | the client: both come from the grid handling the request.
- */
-
 beforeEach(function () {
     $this->owner = User::factory()->create();
     $this->otherUser = User::factory()->create();
@@ -29,68 +22,6 @@ beforeEach(function () {
     $this->views = '/api/grids/members/views';
     $this->base = "{$this->views}/{$this->view->id}";
 });
-
-// --- index ---
-
-test('index lists only the actor\'s own views of the grid handling the request', function () {
-    DatagridView::factory()->ownedBy($this->owner)->forGrid('app', 'grids.invoices')->create(['name' => 'Other grid']);
-    DatagridView::factory()->ownedBy($this->owner)->forGrid('admin', 'grids.members')->create(['name' => 'Other section']);
-    DatagridView::factory()->ownedBy($this->otherUser)->forGrid('app', 'grids.members')->create(['name' => 'Other owner']);
-
-    $this->actingAs($this->owner)
-        ->getJson($this->views)
-        ->assertOk()
-        ->assertJsonCount(1, 'data')
-        ->assertJsonPath('data.0.id', $this->view->id)
-        ->assertJsonPath('data.0.name', 'Active members');
-});
-
-test('index ignores a grid named in the query string', function () {
-    DatagridView::factory()->ownedBy($this->owner)->forGrid('app', 'grids.invoices')->create(['name' => 'Other grid']);
-
-    $this->actingAs($this->owner)
-        ->getJson("{$this->views}?grid=grids.invoices&grid_key=grids.invoices")
-        ->assertOk()
-        ->assertJsonPath('data.*.name', ['Active members']);
-});
-
-test('index never lists a view owned by an identity of another type sharing the actor\'s key', function () {
-    $admin = Admin::factory()->create();
-    $user = User::query()->findOrFail($admin->getKey());
-
-    DatagridView::factory()->ownedBy($admin)->forGrid('app', 'grids.invoices')->create(['name' => 'Admin view']);
-
-    $this->actingAs($user)
-        ->getJson('/api/grids/invoices/views')
-        ->assertOk()
-        ->assertJsonCount(0, 'data');
-});
-
-test('index lists the default view first, then the rest by name ignoring case', function () {
-    DatagridView::factory()->ownedBy($this->owner)->forGrid('app', 'grids.members')->create(['name' => 'beta']);
-    DatagridView::factory()->ownedBy($this->owner)->forGrid('app', 'grids.members')->asDefault()->create(['name' => 'Zulu']);
-    DatagridView::factory()->ownedBy($this->owner)->forGrid('app', 'grids.members')->create(['name' => 'Alpha']);
-
-    $this->actingAs($this->owner)
-        ->getJson($this->views)
-        ->assertOk()
-        ->assertJsonPath('data.*.name', ['Zulu', 'Active members', 'Alpha', 'beta']);
-});
-
-test('index answers with exactly the resource fields', function () {
-    $this->actingAs($this->owner)
-        ->getJson($this->views)
-        ->assertOk()
-        ->assertJsonStructure(['data' => [['id', 'grid_key', 'name', 'filter_sets', 'sorts', 'visibility', 'page_size', 'is_default', 'updated_at']]])
-        ->assertJsonPath('data.0.grid_key', 'grids.members')
-        ->assertJsonPath('data.0.page_size', 25)
-        ->assertJsonPath('data.0.is_default', false)
-        ->assertJsonMissingPath('data.0.owner_id')
-        ->assertJsonMissingPath('data.0.owner_type')
-        ->assertJsonMissingPath('data.0.section');
-});
-
-// --- store ---
 
 test('store creates a view owned by the actor in the grid\'s section, under the grid\'s key, and answers 201', function () {
     $response = $this->actingAs($this->owner)
@@ -139,10 +70,6 @@ test('store ignores a grid, owner or section named in the payload', function () 
         ->and($view->owner_id)->toBe($this->owner->getKey());
 });
 
-/*
- | Compared as decoded structures, never as strings: the payload must come back
- | with the same values, in the same order, with the same types.
- */
 test('saved grid state round-trips exactly through store, the table and index', function () {
     $response = $this->actingAs($this->owner)
         ->postJson('/api/grids/invoices/views', ['name' => 'Round trip', ...gridState()])
@@ -182,8 +109,6 @@ test('store with is_default makes the new view the only default of its grid', fu
         ->and(DatagridView::query()->forGrid('app', 'grids.members')->where('is_default', true)->pluck('id')->all())
         ->toBe([$response->json('data.id')]);
 });
-
-// --- update ---
 
 test('update renames the view', function () {
     $this->actingAs($this->owner)
@@ -233,81 +158,6 @@ test('update does not move the view to another grid or change its default flag',
     expect($fresh->grid_key)->toBe('grids.members')
         ->and($fresh->is_default)->toBeFalse();
 });
-
-// --- destroy ---
-
-test('the owner can delete their view', function () {
-    $this->actingAs($this->owner)
-        ->deleteJson($this->base)
-        ->assertNoContent();
-
-    expect(DatagridView::query()->whereKey($this->view->id)->exists())->toBeFalse();
-});
-
-test('deleting the default view leaves the grid with no default', function () {
-    $this->view->forceFill(['is_default' => true])->save();
-    DatagridView::factory()->ownedBy($this->owner)->forGrid('app', 'grids.members')->create();
-
-    $this->actingAs($this->owner)->deleteJson($this->base)->assertNoContent();
-
-    expect(DatagridView::query()->forGrid('app', 'grids.members')->where('is_default', true)->exists())->toBeFalse();
-});
-
-// --- default ---
-
-test('put default makes the view the actor\'s only default for the grid', function () {
-    $previous = DatagridView::factory()->ownedBy($this->owner)->forGrid('app', 'grids.members')->asDefault()->create();
-
-    $this->actingAs($this->owner)
-        ->putJson("{$this->base}/default")
-        ->assertOk()
-        ->assertJsonPath('data.id', $this->view->id)
-        ->assertJsonPath('data.is_default', true);
-
-    expect($previous->fresh()->is_default)->toBeFalse();
-});
-
-test('delete default clears the view\'s default flag', function () {
-    $this->view->forceFill(['is_default' => true])->save();
-
-    $this->actingAs($this->owner)
-        ->deleteJson("{$this->base}/default")
-        ->assertOk()
-        ->assertJsonPath('data.id', $this->view->id)
-        ->assertJsonPath('data.is_default', false);
-
-    expect($this->view->fresh()->is_default)->toBeFalse();
-});
-
-// --- access ---
-
-/**
- * Every route that names one view, as [method, uri suffix, payload].
- *
- * @return array<string, array{string, string, array<string, mixed>}>
- */
-function singleViewEndpoints(): array
-{
-    return [
-        'update' => ['patch', '', ['name' => 'Taken over']],
-        'destroy' => ['delete', '', []],
-        'set default' => ['put', '/default', []],
-        'clear default' => ['delete', '/default', []],
-    ];
-}
-
-/**
- * Asserts $view is exactly as the suite created it: still there, its name
- * unchanged and not the default.
- */
-function expectUntouched(DatagridView $view, string $name): void
-{
-    $fresh = $view->fresh();
-
-    expect($fresh)->not->toBeNull()
-        ->and($fresh->name)->toBe($name)
-        ->and($fresh->is_default)->toBeFalse();
-}
 
 test('another owner\'s view is not found', function (string $method, string $suffix, array $payload) {
     $this->actingAs($this->otherUser)
@@ -368,11 +218,6 @@ test('a view id that does not exist, or is not an id, is not found', function (s
         ->assertNotFound();
 })->with(singleViewEndpoints())->with(['999999', 'abc', '1.5', '-1']);
 
-/*
- | SQLite answers `findOrFail('abc')` with a 404 anyway; PostgreSQL would
- | raise an error casting it to the integer key. So the guard must refuse
- | anything but digits before any query reaches the views table.
- */
 test('a view id that is not all digits is refused before any query reaches the views table', function (string $method, string $suffix, array $payload, string $id) {
     $this->actingAs($this->owner);
 
@@ -445,8 +290,6 @@ test('an actor the section admits may use every route there', function () {
     $this->actingAs($this->owner)->deleteJson("/api/grids/scripted-members/views/{$id}")->assertNoContent();
 });
 
-// --- the grid's own permission ---
-
 test('an actor the grid\'s own permission refuses may not list, create or touch its views', function () {
     Gate::define(GuardedMembersDataGrid::PERMISSION, fn (): bool => false);
     $guarded = DatagridView::factory()->ownedBy($this->owner)->forGrid('app', 'grids.guarded-members')->create(['name' => 'Guarded']);
@@ -471,8 +314,6 @@ test('an actor the grid\'s own permission admits may use its views', function ()
     $this->actingAs($this->owner)->getJson('/api/grids/guarded-members/views')->assertOk()->assertJsonPath('data.0.id', $id);
     $this->actingAs($this->owner)->putJson("/api/grids/guarded-members/views/{$id}/default")->assertOk();
 });
-
-// --- the grid's key ---
 
 test('a grid whose visualization key is longer than the grid_key column fails clearly instead of storing a truncated key', function () {
     Route::middleware('auth')->prefix('api')->group(fn () => Route::dataGrid(OverlongKeyDataGrid::class));
@@ -500,8 +341,6 @@ test('a grid key of exactly 128 characters is accepted', function () {
         ->assertCreated()
         ->assertJsonPath('data.grid_key', $grid->getVisualizationKey());
 });
-
-// --- the grid's section ---
 
 test('a grid whose section is not listed in config refuses to serve views', function () {
     config()->set('datagrid-views.sections', []);

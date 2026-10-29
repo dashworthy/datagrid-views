@@ -28,17 +28,11 @@ test('find throws when no sections are configured at all', function () {
 });
 
 test('the package config ships with no sections, so a host must list its own', function () {
-    $shipped = require __DIR__.'/../../config/datagrid-views.php';
+    $shipped = require __DIR__.'/../../../config/datagrid-views.php';
 
     expect($shipped)->toBe(['sections' => []]);
 });
 
-/*
- | keyOf() is what a grid's views go through to reach their section: it hands
- | back the key only for a section that is listed and whose key no other
- | listed enum also claims, so a misconfigured grid fails closed instead of
- | borrowing another section's access rules.
- */
 test('keyOf returns the key of a listed section', function () {
     expect(app(DatagridViewSections::class)->keyOf(TestSection::App))->toBe('app')
         ->and(app(DatagridViewSections::class)->keyOf(TestSection::Admin))->toBe('admin');
