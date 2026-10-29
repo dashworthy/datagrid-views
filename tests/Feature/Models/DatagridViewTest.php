@@ -8,11 +8,6 @@ beforeEach(function () {
     $this->owner = User::factory()->create();
 });
 
-/*
- | Grid state is stored in the same snake_case wire shape dashboard_widgets
- | uses, so the client can hand a widget's settings and a view's settings to
- | the same helpers.
- */
 test('saved grid state reads back exactly as it was written', function () {
     $state = [
         'filter_sets' => [
@@ -80,11 +75,6 @@ test('the fillable attributes are exactly the view\'s own settings, never its ow
     ]);
 });
 
-/*
- | A view's section and grid decide whose scope it lives in, and its default
- | flag is held to one per grid by SetDefaultDatagridViewAction's lock. None
- | of them may be changed by filling the model from input.
- */
 test('section, grid key and default flag cannot be mass-assigned', function () {
     $view = DatagridView::factory()->ownedBy($this->owner)->forGrid('app', 'members')->create();
 
